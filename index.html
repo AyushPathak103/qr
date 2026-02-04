@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Smart Attendance System</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #eef2f3;
+}
+
+.container {
+    width: 380px;
+    margin: 30px auto;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+h2, h3 {
+    text-align: center;
+}
+
+input, button {
+    width: 100%;
+    padding: 8px;
+    margin: 6px 0;
+}
+
+button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #43a047;
+}
+
+#reader {
+    width: 250px;
+    margin: 10px auto;
+}
+
+#status {
+    text-align: center;
+    font-weight: bold;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+th, td {
+    border: 1px solid #ccc;
+    padding: 6px;
+    text-align: center;
+}
+
+th {
+    background: #4CAF50;
+    color: white;
+}
+
+.tab-btn {
+    background: #2196F3;
+    margin-bottom: 5px;
+}
+
+.tab-btn:hover {
+    background: #1e88e5;
+}
+
+.hidden {
+    display: none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <button class="tab-btn" onclick="showStudent()">Student</button>
+    <button class="tab-btn" onclick="showAdmin()">Admin</button>
+</div>
+
+<!-- ================= STUDENT PAGE ================= -->
+<div class="container" id="studentPage">
+    <h2>Student Attendance</h2>
+
+    <input type="text" id="studentId" placeholder="Student ID">
+    <input type="text" id="studentName" placeholder="Student Name">
+
+    <h3>Scan QR Code</h3>
+    <div id="reader"></div>
+    <p id="qr-result">QR: Not Scanned</p>
+
+    <button onclick="markAttendance()">Mark Attendance</button>
+    <p id="status"></p>
+</div>
+
+<!-- ================= ADMIN PAGE ================= -->
+<div class="container hidden" id="adminPage">
+    <h2>Admin Panel</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Student ID</th>
+                <th>Session</th>
+                <th>Device</th>
+            </tr>
+        </thead>
+        <tbody id="adminTable"></tbody>
+    </table>
+
+    <button style="background:red" onclick="clearAttendance()">Clear Attendance</button>
+</div>
+
+<!-- QR Scanner Library -->
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+// ---------- PAGE SWITCH ----------
+function showStudent() {
+    document.getElementById("studentPage").classList.remove("hidden");
+    document.getElementById("adminPage").classList.add("hidden");
+}
+
+function showAdmin() {
+    document.getElementById("adminPage").classList.remove("hidden");
+    document.getElementById("studentPage").classList.add("hidden");
+    loadAttendance();
+}
+
+// ---------- DEVICE ID ----------
+function getDeviceId() {
+    let id = localStorage.getItem("DEVICE_ID");
+    if (!id) {
+        id = "DEV-" + Math.random().toString(36).substring(2, 12);
+        localStorage.setItem("DEVICE_ID", id);
+    }
+    return id;
+}
+
+// ---------- QR SCANNER ----------
+let scannedSession = "";
+
+function onScanSuccess(text) {
+    scannedSession = text;
+    document.getElementById("qr-result").innerText = "QR: " + text;
+}
+
+let scanner = new Html5QrcodeScanner(
+    "reader",
+    { fps: 10, qrbox: 200 }
+);
+scanner.render(onScanSuccess);
+
+// ---------- MARK ATTENDANCE ----------
+function markAttendance() {
+    let studentId = document.getElementById("studentId").value.trim();
+    let studentName = document.getElementById("studentName").value.trim();
+    let deviceId = getDeviceId();
+
+    if (!studentId || !studentName || !scannedSession) {
+        setStatus("❌ Fill details & scan QR", "red");
+        return;
+    }
+
+    fetch("http://127.0.0.1:5000/mark_attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            student_id: studentId,
+            session_id: scannedSession,
+            device_id: deviceId
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === "success") {
+            setStatus("✅ Attendance marked successfully", "green");
+        } else {
+            setStatus("🚫 " + data.message, "red");
+        }
+    })
+    .catch(() => setStatus("❌ Server error", "red"));
+}
+
+function setStatus(msg, color) {
+    let s = document.getElementById("status");
+    s.innerText = msg;
+    s.style.color = color;
+}
+
+// ---------- ADMIN ----------
+function loadAttendance() {
+    fetch("http://127.0.0.1:5000/admin/attendance")
+    .then(res => res.json())
+    .then(data => {
+        let body = document.getElementById("adminTable");
+        body.innerHTML = "";
+        data.forEach(r => {
+            body.innerHTML += `
+                <tr>
+                    <td>${r.student_id}</td>
+                    <td>${r.session_id}</td>
+                    <td>${r.device_id}</td>
+                </tr>
+            `;
+        });
+    });
+}
+
+function clearAttendance() {
+    if (!confirm("Clear all attendance?")) return;
+
+    fetch("http://127.0.0.1:5000/admin/clear", { method: "POST" })
+    .then(() => {
+        loadAttendance();
+        alert("Attendance cleared");
+    });
+}
+</script>
+
+</body>
+</html>
